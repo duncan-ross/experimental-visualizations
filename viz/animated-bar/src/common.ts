@@ -25,7 +25,7 @@ interface YearFrame{
  */
 export function processData(vizData: ObjectRow[],k:number) {
     const dataMap: Map<number, Array<MotionChartData>> = new Map();
-    let firstDate: number = null;
+    let firstDate: number|null=null;
     const allDims = new Set(vizData.map(row => row.dimID[0] as string));
 
     for (const row of vizData) {
@@ -39,10 +39,10 @@ export function processData(vizData: ObjectRow[],k:number) {
             value: +row.metricID[0],
             rank: -1
         }
-
-        if (dataMap.has(currentDate)) {
-            dataMap.get(currentDate).push(data);
-            for (const element of dataMap.get(currentDate)) { element.rank = dataMap.get(currentDate).indexOf(element) }
+        const arr =dataMap.get(currentDate);
+        if (arr!=undefined) {
+            arr.push(data);
+            for (const element of arr) { element.rank = arr.indexOf(element) }
         }
         else {
             dataMap.set(currentDate, [data])
@@ -56,7 +56,7 @@ export function processData(vizData: ObjectRow[],k:number) {
             if (!foundDims.has(dim)) {
                 data.push({
                     name: dim,
-                    value: null,
+                    value: 0,
                     rank: -1,
                 });
             }

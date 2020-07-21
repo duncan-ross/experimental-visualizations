@@ -15,13 +15,8 @@ let transition: d3.Transition<SVGSVGElement, unknown, HTMLElement, unknown>;
 let height: number;
 let width: number;
 let resize: NodeJS.Timeout;
-
-var formatDateIntoYear = d3.timeFormat("%Y");
-var formatDate = d3.timeFormat("%b %Y");
-var parseDate = d3.timeParse("%m/%d/%y");
-
-var startDate = new Date("2004-11-01"),
-    endDate = new Date("2017-04-01");
+let currentKeyframe:number = 0;
+let isPaused:boolean = false;
 
 
 // write viz code here
@@ -37,7 +32,6 @@ export async function drawViz(data: ObjectFormat) {
 
     d3.select('body').selectAll('svg').remove();
     d3.select('body').selectAll('button').remove();
-    
 
     svg = d3
         .select('body')
@@ -45,90 +39,54 @@ export async function drawViz(data: ObjectFormat) {
         .attr('width', width - 20)
         .attr('height', height - 20);
     d3.select('body')
-    .append('button')
-    .text('Replay')
-    .on("click", () => {
-        d3.select('body').selectAll('svg').remove()
-        previousData.clear();
-        terminated = true;
-        drawViz(data);
-    });
-    //createSlider();
+        .append('button')
+        .attr('class', '.replay')
+        .text('Replay')
+        .on("click", () => {
+            d3.select('body').selectAll('svg').remove()
+            previousData.clear();
+            terminated = true;
+            currentKeyframe = 0;
+            isPaused = false;
+            drawViz(data);
+        });
+    d3.select('body')
+        .append('button')
+        .text(isPaused ? 'isPaused' : 'Play')
+        .attr('class', '.play')
+        .on("click", () => {
+            isPaused = !isPaused;
+            if (!isPaused && currentKeyframe===dates.length-1){currentKeyframe=0}
+            drawViz(data)
+        });
 
     //Process data
     const dataInfo = common.processData(data.tables.DEFAULT, chartSettings.keyframes);
     const keyframes = dataInfo.keyframes;
-    const firstDate = dataInfo.firstDate;
 
+    const dates = Array.from(keyframes.keys());
+    const firstDate = currentKeyframe === 0 ? dataInfo.firstDate : dates[currentKeyframe];
     //Initialize Graph
     transition = svg.transition().duration(0).ease(d3.easeLinear);
     updateGraph(keyframes.get(firstDate), firstDate);
 
-    //Iterate through keyframes
-    for (const keyframe of keyframes) {
-        if (terminated) { break; }
-        transition = svg.transition().duration(chartSettings.duration).ease(d3.easeLinear)
-        updateGraph(keyframe[1], keyframe[0]);
-        await transition.end();
+    //Iterate through keyframe
+    if (!isPaused) {
+        for (let i = currentKeyframe; i < dates.length; i++) {
+            currentKeyframe = i;
+            if (terminated) { break; }
+            transition = svg.transition().duration(chartSettings.duration).ease(d3.easeLinear)
+            updateGraph(keyframes.get(dates[i]), dates[i]);
+            await transition.end();
 
-        for (const d of keyframe[1]) {
-            previousData.set(d.name, d.value);
+            for (const d of keyframes.get(dates[i])) {
+                previousData.set(d.name, d.value);
+            }
+
+            if (isPaused) { break; }
         }
     }
 };
-
-function createSlider(){
-
-////////// slider //////////
-
-var moving = false;
-var currentValue = 0;
-var targetValue = width;
-
-var playButton = d3.select("#play-button");
-    
-var x = d3.scaleTime()
-    .domain([startDate, endDate])
-    .range([0, targetValue])
-    .clamp(true);
-
-var slider = svg.append("g")
-    .attr("class", "slider")
-    .attr('transform','translate(0,'+(height-25)+')')
-
-slider.append("line")
-    .attr("class", "track")
-    .attr("x1", x.range()[0])
-    .attr("x2", x.range()[1])
-    .attr("class", "track-inset")
-    .attr("class", "track-overlay")
-    .call(d3.drag()
-        .on("start.interrupt", function() { slider.interrupt(); })
-        .on("start drag", function() {
-        //   currentValue = d3.event.x;
-        //   update(x.invert(currentValue)); 
-        })
-    );
-
-slider.insert("g", ".track-overlay")
-    .attr("class", "ticks")
-    .attr("transform", "translate(0," + 18 + ")")
-  .selectAll("text")
-    .data(x.ticks(10))
-    .enter()
-    .append("text")
-    .attr("x", x)
-    .attr("y", 10)
-    .attr("text-anchor", "middle")
-    .text(function(d) { return formatDateIntoYear(d); });
-
-var handle = slider.insert("circle", ".track-overlay")
-    .attr("class", "handle")
-    .attr("r", 9);
-
-var label = slider.append("text")  
-    .attr("class", "label")
-}
 
 function updateYAxis(data: Array<common.MotionChartData>) {
     yScale.domain([...data].filter(a => a.value !== null).sort((a, b) => d3.descending(a.value, b.value)).map((d) => d.rank).slice(0, chartSettings.bars));
@@ -221,7 +179,7 @@ function updateLabels(data: Array<common.MotionChartData>) {
                     .remove())
 
             .call(bar => bar.transition(transition)
-                .attr("transform", (d) => `translate(${xScale(d.value)}, ${yScale(d.rank) || height})`)
+                .attr("transform", (d:common.MotionChartData) => `translate(${xScale(d.value)}, ${yScale(d.rank) || height})`)
                 .attr("y", yScale.bandwidth() / 2)
                 .call(g => g.select("tspan").tween("text", d => common.textTween((previousData.get(d.name) || d.value), d.value))));
 };
@@ -262,6 +220,6 @@ function updateChartSettings(style: StyleById) {
     chartSettings = {
         duration: (+style.duration.value * 1000),
         bars: +style.bars.value,
-        keyframes:+style.keyframes.value,
+        keyframes: +style.keyframes.value,
     }
 }
